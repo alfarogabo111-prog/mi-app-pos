@@ -1,1 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>VentaPOS - Sistema de Ventas Móvil</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- HTML5 QR Code / Barcode Scanner -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #print-area, #print-area * { visibility: visible; }
+      #print-area {
+        position: absolute; left: 0; top: 0; width: 100%;
+        max-width: 80mm; margin: 0 auto; padding: 5mm;
+        color: #000; background: #fff; font-family: 'Courier New', Courier, monospace; font-size: 12px;
+      }
+      .no-print { display: none !important; }
+    }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    @keyframes progress { from { width: 100%; } to { width: 0%; } }
+    .animate-progress-5s { animation: progress 5s linear forwards; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex flex-col select-none">
 
+  <!-- BARRA SUPERIOR -->
+  <header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md safe-top">
+    <div class="px-3.5 py-2.5 flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-emerald-300 flex items-center justify-center text-slate-950 font-black text-lg shadow-sm">
+          <i class="fa-solid fa-cash-register"></i>
+        </div>
+        <div>
+          <h1 id="header-business-name" class="font-bold text-sm sm:text-base leading-tight tracking-tight text-white flex items-center gap-1.5 truncate max-w-[150px] sm:max-w-xs">
+            Mi Negocio
+          </h1>
+          <div class="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+            <span>BCV:</span>
+            <span id="header-bcv-rate" class="font-bold">Bs. 0,00</span>
+            <button onclick="fetchBcvRate(true)" title="Actualizar Tasa" class="text-slate-400 hover:text-white ml-0.5 active:scale-95 transition-transform">
+              <i id="bcv-refresh-icon" class="fa-solid fa-arrows-rotate text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-1.5">
+        <button onclick="openModal('converter-modal')" class="bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 flex items-center gap-1 font-medium transition active:scale-95">
+          <i class="fa-solid fa-calculator"></i>
+          <span class="hidden sm:inline">Conversor</span>
+        </button>
+        <button onclick="openModal('settings-modal')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs p-2 rounded-xl border border-slate-700 active:scale-95 transition">
+          <i class="fa-solid fa-gear text-sm"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="flex-1 pb-24 max-w-4xl w-full mx-auto p-3 sm:p-4">
+
+    <!-- 1. PUNTO DE VENTA (POS) -->
+    <section id="tab-pos" class="tab-content block space-y-3">
+      <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 space-y-2">
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+            <input type="text" id="pos-search" oninput="renderPosCatalog()" placeholder="Buscar por nombre o código..." class="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <button id="pos-search-clear" onclick="clearPosSearch()" class="hidden absolute right-3 top-2.5 text-slate-400 hover:text-slate-600">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <!-- Botón Escáner Código de Barras -->
+          <button onclick="openBarcodeScanner()" class="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition">
+            <i class="fa-solid fa-barcode text-sm"></i>
+            <span class="hidden sm:inline">Escanear</span>
+          </button>
+        </div>
+        <div id="pos-categories" class="flex gap-1.5 overflow-x-auto pb-0.5 text-xs no-scrollbar"></div>
+      </div>
+
+      <!-- Catálogo de Productos -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5" id="pos-products-grid"></div>
+
+      <!-- Barra Flotante Carrito -->
+      <div id="pos-floating-bar" class="fixed bottom-16 left-0 right-0 p-3 max-w-4xl mx-auto z-20 transition-transform duration-200">
+        <button onclick="openCartModal()" class="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-2xl p-3.5 shadow-xl flex items-center justify-between border border-slate-700 active:scale-[0.99] transition">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-sm shadow">
+              <span id="floating-cart-count">0</span>
+            </div>
+            <div class="text-left">
+              <p class="text-xs text-slate-300 uppercase font-semibold tracking-wider">Ver Carrito y Cobrar</p>
+              <p class="text-[11px] text-emerald-400 font-medium">Soporta pagos mixtos y vuelto</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <p id="floating-cart-usd" class="text-base font-black text-emerald-400 leading-tight">$0.00</p>
+            <p id="floating-cart-bs" class="text-[11px] text-slate-300 font-medium">Bs. 0,00</p>
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <!-- 2. INVENTARIO -->
+    <section id="tab-inventory" class="tab-content hidden space-y-3">
+      <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row gap-2 justify-between items-center">
+        <div class="relative w-full sm:w-64">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+          <input type="text" id="inv-search" oninput="renderInventory()" placeholder="Buscar en inventario..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <button onclick="openProductModal()" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow flex items-center justify-center gap-1.5 active:scale-95 transition">
+          <i class="fa-solid fa-plus"></i>
+          <span>Nuevo Producto</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div><p class="text-slate-500">Total Ítems</p><p id="inv-stat-total" class="text-base font-black text-slate-800">0</p></div>
+          <i class="fa-solid fa-box text-slate-300 text-lg"></i>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-rose-200 bg-rose-50/30 shadow-sm flex items-center justify-between">
+          <div><p class="text-rose-600 font-medium">Stock Bajo (≤ 5)</p><p id="inv-stat-low" class="text-base font-black text-rose-600">0</p></div>
+          <i class="fa-solid fa-triangle-exclamation text-rose-400 text-lg"></i>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div><p class="text-slate-500">Valor Costo ($)</p><p id="inv-stat-cost" class="text-base font-black text-slate-800">$0.00</p></div>
+          <i class="fa-solid fa-hand-holding-dollar text-slate-300 text-lg"></i>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div><p class="text-slate-500">Valor Venta ($)</p><p id="inv-stat-sale" class="text-base font-black text-emerald-600">$0.00</p></div>
+          <i class="fa-solid fa-sack-dollar text-emerald-300 text-lg"></i>
+        </div>
+      </div>
+
+      <div id="inventory-list" class="space-y-2"></div>
+    </section>
+
+    <!-- 3. CLIENTES (CRM BÁSICO) -->
+    <section id="tab-customers" class="tab-content hidden space-y-3">
+      <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row gap-2 justify-between items-center">
+        <div>
+          <h2 class="font-bold text-slate-800 text-sm sm:text-base">Libreta de Clientes</h2>
+          <p class="text-xs text-slate-500">Registra clientes frecuentes para compras y fiados.</p>
+        </div>
+        <button onclick="openCustomerModal()" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow flex items-center justify-center gap-1.5 active:scale-95 transition">
+          <i class="fa-solid fa-user-plus"></i>
+          <span>Nuevo Cliente</span>
+        </button>
+      </div>
+
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+        <input type="text" id="customers-search" oninput="renderCustomers()" placeholder="Buscar por nombre, cédula o teléfono..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      </div>
+
+      <div id="customers-list" class="space-y-2"></div>
+    </section>
+
+    <!-- 4. FIADOS Y ABONOS -->
+    <section id="tab-debts" class="tab-content hidden space-y-3">
+      <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div>
+          <h2 class="font-bold text-slate-800 text-sm sm:text-base">Cuentas por Cobrar (Fiados)</h2>
+          <p class="text-xs text-slate-500">Historial de abonos parciales y cobro por WhatsApp.</p>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-right w-full sm:w-auto">
+          <p class="text-[11px] text-amber-700 font-medium">Saldo Total por Cobrar</p>
+          <p id="total-debts-usd" class="text-lg font-black text-amber-900">$0.00</p>
+          <p id="total-debts-bs" class="text-[10px] text-amber-700 font-semibold">Bs. 0,00</p>
+        </div>
+      </div>
+
+      <div class="relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+        <input type="text" id="debts-search" oninput="renderDebts()" placeholder="Buscar deudor..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+      </div>
+
+      <div id="debts-list" class="space-y-2.5"></div>
+    </section>
+
+    <!-- 5. HISTORIAL Y CORTE Z -->
+    <section id="tab-history" class="tab-content hidden space-y-3">
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-slate-900 text-white p-3 rounded-2xl shadow-md border border-slate-700">
+          <div class="flex items-center justify-between text-xs text-slate-300 mb-1">
+            <span>Ventas Hoy</span><i class="fa-solid fa-calendar-day text-emerald-400"></i>
+          </div>
+          <p id="stat-today-sales" class="text-lg font-black text-emerald-400">$0.00</p>
+          <p id="stat-today-sales-bs" class="text-[10px] text-slate-300">Bs. 0,00</p>
+          <div class="mt-1.5 pt-1.5 border-t border-slate-700/60 flex justify-between items-center text-[10px]">
+            <span class="text-slate-400">Ganancia:</span>
+            <span id="stat-today-profit" class="font-bold text-emerald-300">+$0.00</span>
+          </div>
+        </div>
+
+        <div class="bg-emerald-900 text-white p-3 rounded-2xl shadow-md border border-emerald-700">
+          <div class="flex items-center justify-between text-xs text-emerald-200 mb-1">
+            <span>Ventas Totales</span><i class="fa-solid fa-chart-line text-emerald-300"></i>
+          </div>
+          <p id="stat-total-sales" class="text-lg font-black text-white">$0.00</p>
+          <p id="stat-total-sales-bs" class="text-[10px] text-emerald-200">Bs. 0,00</p>
+          <div class="mt-1.5 pt-1.5 border-t border-emerald-700/60 flex justify-between items-center text-[10px]">
+            <span class="text-emerald-200">Ganancia:</span>
+            <span id="stat-total-profit" class="font-bold text-amber-300">+$0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <button onclick="openCorteZModal()" class="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow active:scale-95 transition">
+          <i class="fa-solid fa-cash-register text-emerald-400"></i>
+          <span>Cierre de Caja (Corte Z)</span>
+        </button>
+        <button onclick="clearHistoryConfirm()" class="text-rose-600 hover:text-rose-700 text-xs font-semibold px-2 py-1 rounded-lg hover:bg-rose-50 transition">
+          <i class="fa-solid fa-trash-can mr-1"></i> Borrar Todo
+        </button>
+      </div>
+
+      <div id="sales-history-list" class="space-y-2"></div>
+    </section>
+
+  </main>
+
+  <!-- NAVEGACIÓN INFERIOR (5 PESTAÑAS) -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-30 shadow-lg safe-bottom">
+    <div class="max-w-md mx-auto grid grid-cols-5 py-1.5 px-1">
+      <button onclick="switchTab('pos')" id="nav-btn-pos" class="nav-btn active flex flex-col items-center justify-center py-1 text-emerald-600 transition">
+        <i class="fa-solid fa-cart-shopping text-base"></i>
+        <span class="text-[9px] font-bold mt-0.5">Vender</span>
+      </button>
+
+      <button onclick="switchTab('inventory')" id="nav-btn-inventory" class="nav-btn flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600 transition">
+        <div class="relative">
+          <i class="fa-solid fa-boxes-stacked text-base"></i>
+          <span id="badge-low-stock-nav" class="hidden absolute -top-1 -right-2 bg-rose-500 text-white text-[8px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">!</span>
+        </div>
+        <span class="text-[9px] font-medium mt-0.5">Inventario</span>
+      </button>
+
+      <button onclick="switchTab('customers')" id="nav-btn-customers" class="nav-btn flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600 transition">
+        <i class="fa-solid fa-users text-base"></i>
+        <span class="text-[9px] font-medium mt-0.5">Clientes</span>
+      </button>
+
+      <button onclick="switchTab('debts')" id="nav-btn-debts" class="nav-btn flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600 transition">
+        <div class="relative">
+          <i class="fa-solid fa-hand-holding-dollar text-base"></i>
+          <span id="badge-debts-count" class="hidden absolute -top-1 -right-2 bg-amber-500 text-white text-[8px] px-1 h-3.5 rounded-full flex items-center justify-center font-bold">0</span>
+        </div>
+        <span class="text-[9px] font-medium mt-0.5">Fiados</span>
+      </button>
+
+      <button onclick="switchTab('history')" id="nav-btn-history" class="nav-btn flex flex-col items-center justify-center py-1 text-slate-400 hover:text-slate-600 transition">
+        <i class="fa-solid fa-clock-rotate-left text-base"></i>
+        <span class="text-[9px] font-medium mt-0.5">Historial</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ================= MODALES ================= -->
+
+  <!-- MODAL: BIENVENIDA DIARIA CRISTIANA (5 SEGUNDOS) -->
+  <div id="christian-modal" class="fixed inset-0 bg-slate-950/75 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-3.5 text-center relative overflow-hidden">
+      <!-- Barra de progreso de 5 segundos -->
+      <div class="absolute top-0 left-0 right-0 h-1.5 bg-slate-100">
+        <div id="christian-progress" class="h-full bg-emerald-500 animate-progress-5s"></div>
+      </div>
+      <div class="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl mt-1">
+        <i class="fa-solid fa-dove"></i>
+      </div>
+      <div>
+        <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Bendición del Día</span>
+        <h3 class="font-bold text-slate-900 text-base mt-1">¡Dios bendiga tu jornada!</h3>
+      </div>
+      <blockquote id="christian-quote-text" class="text-xs text-slate-600 italic bg-slate-50 p-3 rounded-2xl border border-slate-100 leading-relaxed font-serif">
+        "Todo lo puedo en Cristo que me fortalece."
+      </blockquote>
+      <p id="christian-quote-ref" class="text-[11px] font-bold text-slate-700">Filipenses 4:13</p>
+      <button onclick="closeChristianModal()" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-xl font-bold text-xs shadow active:scale-95 transition flex items-center justify-center gap-1.5">
+        <span>Amén / Continuar</span>
+        <span id="christian-timer-num" class="text-slate-400 font-normal text-[10px]">(5s)</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIGURACIÓN Y BACKUP -->
+  <div id="settings-modal" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-3.5 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <h3 id="settings-title" class="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+          <i class="fa-solid fa-store text-emerald-600"></i>
+          <span>Configuración del Negocio</span>
+        </h3>
+        <button id="settings-close-btn" onclick="closeModal('settings-modal')" class="text-slate-400 hover:text-slate-600 p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Nombre del Negocio *</label>
+          <input type="text" id="cfg-business-name" placeholder="Mi Negocio" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Margen de Ganancia por Defecto (%) *</label>
+          <input type="number" id="cfg-margin-percent" min="0" max="500" placeholder="30" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+        </div>
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="font-semibold text-slate-700">Tasa BCV Oficial (Bs)</span>
+            <button type="button" onclick="fetchBcvRate(true)" class="text-emerald-600 font-bold hover:underline">
+              <i class="fa-solid fa-cloud-arrow-down"></i> Consultar
+            </button>
+          </div>
+  
