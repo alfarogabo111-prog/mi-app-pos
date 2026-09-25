@@ -1,0 +1,6 @@
+{
+  "appId": "com.tuapp.pos",
+  "appName": "VentaPOS",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}
