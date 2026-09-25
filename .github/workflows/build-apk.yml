@@ -27,20 +27,26 @@ jobs:
       - name: 4. Instalar dependencias
         run: npm install
 
-      - name: 5. Inicializar plataforma Android
+      - name: 5. Preparar estructura web
+        run: |
+          mkdir -p www
+          # Si index.html está en la raíz, asegúrate de moverlo a www si es necesario:
+          if [ -f index.html ]; then cp index.html www/; fi
+
+      - name: 6. Inicializar plataforma Android
         run: |
           npx cap add android || true
           npx cap sync android
 
-      - name: 6. Dar permisos de ejecución a Gradle
+      - name: 7. Dar permisos de ejecución a Gradle
         run: chmod +x android/gradlew
 
-      - name: 7. Compilar APK (Debug)
+      - name: 8. Compilar APK (Debug)
         run: |
           cd android
           ./gradlew assembleDebug
 
-      - name: 8. Subir APK generado
+      - name: 9. Subir APK generado
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
